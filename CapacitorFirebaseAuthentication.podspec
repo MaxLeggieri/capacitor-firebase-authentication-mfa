@@ -14,6 +14,9 @@ Pod::Spec.new do |s|
   s.ios.deployment_target  = '14.0'
   s.dependency 'Capacitor'
   s.dependency 'FirebaseAuth', '~> 11.7.0'
+  # Required for Firebase phone/MFA reCAPTCHA SMS defence on iOS; without it
+  # SMS verification fails with error 17208 ERROR_RECAPTCHA_SDK_NOT_LINKED.
+  s.dependency 'RecaptchaEnterprise'
   s.swift_version = '5.1'
   s.static_framework = true
   s.default_subspec = 'Lite'
