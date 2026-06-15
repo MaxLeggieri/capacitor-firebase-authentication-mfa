@@ -8,6 +8,107 @@ Unofficial Capacitor plugin for [Firebase Authentication](https://firebase.googl
   </a>
 </div>
 
+---
+
+## 🔱 Fork: Multi-Factor Authentication (MFA) support
+
+> This is a fork of [`@capacitor-firebase/authentication`](https://github.com/capawesome-team/capacitor-firebase) that adds **SMS multi-factor authentication (resolve sign-in)** on iOS, Android and Web — which upstream does not support ([issue #38](https://github.com/capawesome-team/capacitor-firebase/issues/38)).
+
+**Scope:** this fork lets users who are **already enrolled** in a phone (SMS) second factor complete the second-factor challenge at sign-in. In-app *enrollment* is not included yet.
+
+It adds three methods on top of the upstream API:
+
+- `getMultiFactorResolverHints()` — list the enrolled second factors after an MFA challenge
+- `verifyPhoneNumberForMultiFactor({ hintIndex })` — send the SMS code for the chosen factor
+- `resolveMultiFactorSignIn({ verificationId, verificationCode })` — complete sign-in with the SMS code
+
+### 1. Install from this fork
+
+Use a git dependency instead of the npm package. Pin to the `mfa` branch:
+
+```jsonc
+// package.json
+"dependencies": {
+  "@capacitor-firebase/authentication": "https://github.com/MaxLeggieri/capacitor-firebase-authentication-mfa.git#mfa"
+}
+```
+
+Then install and sync:
+
+```bash
+yarn install   # or: npm install
+npx cap sync
+```
+
+> The `dist/` output is committed to this repo, so no build step runs on install.
+> Because git dependencies are cached by branch ref, after a new commit is pushed to `mfa`
+> run `yarn upgrade @capacitor-firebase/authentication` (or `npm update`) to pull it.
+
+### 2. Firebase Console setup
+
+1. Enable **Identity Platform** and **multi-factor authentication** (SMS) for your project.
+2. Under **Authentication → Settings → reCAPTCHA**, configure the **SMS defence** site keys (an iOS key and an Android key). Phone/MFA verification requires this.
+3. Upload your **APNs Auth Key** under **Project Settings → Cloud Messaging** (needed for iOS silent-push device verification).
+
+### 3. iOS setup
+
+**reCAPTCHA SDK** — already handled: this fork's podspec declares `RecaptchaEnterprise`, so `npx cap sync` / `pod install` links it automatically. Without it, SMS verification fails with `17208 ERROR_RECAPTCHA_SDK_NOT_LINKED`.
+
+**APNs wiring** — you must forward the APNs token and silent verification push to Firebase Auth in your app's `AppDelegate.swift` (this is app code and cannot live in the plugin):
+
+```diff
+import FirebaseAuth
+
+func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
++  Auth.auth().setAPNSToken(deviceToken, type: .unknown)
+   NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+}
+
+func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable : Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
++  if Auth.auth().canHandleNotification(userInfo) {
++    completionHandler(.noData)
++    return
++  }
+   NotificationCenter.default.post(name: Notification.Name.init("didReceiveRemoteNotification"), object: completionHandler, userInfo: userInfo)
+}
+```
+
+> **Note:** the iOS Simulator has no APNs, so it always falls back to reCAPTCHA. Test MFA on a **real device**.
+
+### 4. Android setup
+
+Nothing extra. The reCAPTCHA SDK ships transitively with `firebase-auth:23.1.0+` (this plugin's default), which meets the console's "Android SDK 23.1.0+" requirement. Make sure your app's **SHA-256 fingerprint** is registered in Firebase (needed for the Play Integrity verification path).
+
+### 5. Usage
+
+Catch the `auth/multi-factor-auth-required` error from any sign-in call and resolve it:
+
+```typescript
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+
+try {
+  await FirebaseAuthentication.signInWithEmailAndPassword({ email, password });
+} catch (error: any) {
+  if (error?.code !== 'auth/multi-factor-auth-required') {
+    throw error;
+  }
+
+  // 1. List enrolled second factors
+  const { hints } = await FirebaseAuthentication.getMultiFactorResolverHints();
+
+  // 2. Pick a factor and send the SMS code (here: the first hint)
+  const hintIndex = 0;
+  const { verificationId } = await FirebaseAuthentication.verifyPhoneNumberForMultiFactor({ hintIndex });
+
+  // 3. Prompt the user for the code, then complete sign-in
+  const verificationCode = await promptUserForSmsCode(hints[hintIndex]);
+  await FirebaseAuthentication.resolveMultiFactorSignIn({ verificationId, verificationCode });
+  // On success the normal auth state change fires and the user is signed in.
+}
+```
+
+---
+
 ## Installation
 
 ```bash
