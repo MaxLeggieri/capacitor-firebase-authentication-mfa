@@ -816,8 +816,11 @@ public class FirebaseAuthentication {
                     } else {
                         Exception exception = task.getException();
                         Logger.error(TAG, exception.getMessage(), exception);
-                        String code = FirebaseAuthenticationHelper.createErrorCode(exception);
-                        call.reject(exception.getMessage(), code);
+                        // Route through handleFailedSignIn so a multi-factor
+                        // challenge during credential sign-in (e.g. Google) is
+                        // intercepted and the resolver stored, instead of
+                        // leaking as a generic auth/second-factor-required code.
+                        handleFailedSignIn(call, exception.getMessage(), exception);
                     }
                 });
         }
